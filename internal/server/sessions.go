@@ -147,11 +147,20 @@ func (s *Server) revalidate(ctx context.Context, sess *session.Session) (*sessio
 	if sess.RefreshToken == "" || time.Now().Unix() < sess.RefreshAt {
 		return sess, changed
 	}
+	// Another replica, or a connection that has closed since, may have
+	// refreshed this session without the client getting the result.
+	if stored := s.storedSession(ctx, sess); stored != nil {
+		sess, changed = stored, true
+		if time.Now().Unix() < sess.RefreshAt {
+			return sess, true
+		}
+	}
 	fresh, err := s.refreshes.do(refreshKey(sess), func() (*session.Session, error) {
 		fresh, err := s.refresh(ctx, sess)
 		switch {
 		case err == nil:
 			s.metrics.refreshes.WithLabelValues("success").Inc()
+			s.storeSession(ctx, fresh)
 		case errors.Is(err, errRevoked):
 			s.metrics.refreshes.WithLabelValues("revoked").Inc()
 		default:
@@ -174,6 +183,40 @@ func (s *Server) revalidate(ctx context.Context, sess *session.Session) (*sessio
 		// the refresh result TTL has passed.
 		s.log.Warn("session refresh failed, keeping session", "user", sess.Username, "error", err)
 		return sess, changed
+	}
+}
+
+// storedSession returns a newer refreshed copy of sess from the store, if
+// there is one.
+func (s *Server) storedSession(ctx context.Context, sess *session.Session) *session.Session {
+	if sess.ID == "" {
+		return nil
+	}
+	data, ok, err := s.store.SessionState(ctx, sess.ID, int64(sess.Gen))
+	if err != nil {
+		s.log.Warn("load session state", "error", err, "user", sess.Username)
+	}
+	var stored session.Session
+	if !ok || s.refreshed.Open(sess.ID, data, &stored) != nil || stored.ID != sess.ID {
+		return nil
+	}
+	return &stored
+}
+
+// storeSession saves a refreshed session as the newest state of its ID.
+func (s *Server) storeSession(ctx context.Context, sess *session.Session) {
+	if sess.ID == "" {
+		return
+	}
+	// Runs within a refresh shared by several requests, like refresh.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	defer cancel()
+	data, err := s.refreshed.Seal(sess.ID, sess)
+	if err == nil {
+		err = s.store.SaveSessionState(ctx, sess.ID, int64(sess.Gen), data, sess.Expiry)
+	}
+	if err != nil {
+		s.log.Warn("store session state", "error", err, "user", sess.Username)
 	}
 }
 

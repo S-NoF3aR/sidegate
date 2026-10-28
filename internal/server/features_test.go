@@ -248,6 +248,24 @@ func TestMaxAuthAge(t *testing.T) {
 	}
 }
 
+// Without auth_time the IdP may have reused an old sign-in, so the sign-in
+// age is unknown and age-restricted apps stay closed.
+func TestMissingAuthTime(t *testing.T) {
+	e := newEnv(t, alice) // no auth_time
+	if resp, _ := e.get(t, e.url("whoami", "/")); resp.StatusCode != 200 {
+		t.Fatalf("app without age limit: %d", resp.StatusCode)
+	}
+	resp, body := e.get(t, e.url("fresh", "/"))
+	if resp.StatusCode != 403 || !strings.Contains(body, "didn&#39;t confirm when you signed in") {
+		t.Errorf("age-restricted app: %d %s", resp.StatusCode, body)
+	}
+	// Nor is an auth_time in the future believed.
+	e.idp.set(func(m *mockIdP) { m.claims["auth_time"] = time.Now().Add(time.Hour).Unix() })
+	if resp, _ := e.get(t, e.url("fresh", "/")); resp.StatusCode != 403 {
+		t.Errorf("future auth_time: %d", resp.StatusCode)
+	}
+}
+
 func TestAuditRetention(t *testing.T) {
 	e := newEnv(t, root)
 	ctx := context.Background()

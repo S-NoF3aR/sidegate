@@ -298,10 +298,14 @@ rebuilds the identity from the new ID token:
 
 So a user disabled in Entra loses access at most `refreshInterval` (default
 5 min) after their last refresh. Parallel requests share one refresh, so
-refresh-token rotation is safe on a single replica. With several replicas, two
-of them may occasionally redeem the same token at once. That's harmless with
-Entra, which doesn't invalidate the old token, but IdPs with strict rotation
-and no grace period could end that session.
+refresh-token rotation is safe on a single replica. The newest refreshed state
+of each session is also kept in the database (encrypted with
+`session.secret`), so a client that holds an older copy, e.g. after a
+long RDP session or on another replica, continues from it instead of
+redeeming a rotated token. Two replicas may still occasionally redeem the
+same token at the very same moment. That's harmless with Entra, which
+doesn't invalidate the old token, but IdPs with strict rotation and no grace
+period could end that session.
 
 If the IdP returns no refresh token (a warning is logged at login), sessions
 can't be revalidated and last until `session.lifetime`.
@@ -471,15 +475,17 @@ several MB per minute for a busy desktop. In Kubernetes, enable the
 ### Live sessions
 
 Remote sessions can run for hours, so the proxy keeps checking each open
-connection, browser or native. It ends, with a message in the browser,
-when:
+connection, browser or native. The same applies to WebSockets (and other
+upgraded connections) of web apps. A connection ends, with a message in the
+browser for RDP/SSH, when:
 
-| Event | Ends open RDP/SSH connections |
+| Event | Ends open connections |
 |---|---|
 | The user signs out in the portal | that browser session's connections, immediately |
 | `sidegate logout` | that CLI session's connections, immediately |
 | An admin signs the user (or everyone) out | all of the user's connections, immediately |
 | The user loses access to the app, or the app is deleted | immediately |
+| The app now requires MFA the session lacks, or its max sign-in age has passed | immediately when the app changes, otherwise within 30 s |
 | The IdP revokes the session (account disabled in Entra, sessions revoked, password reset) | at the next session refresh (`oidc.refreshInterval`, default 5 min) |
 | The session reaches `session.lifetime` | within 30 s |
 | The Sidegate instance shuts down (deploy, scale-down) | immediately, with a "please reconnect" message |
@@ -490,9 +496,10 @@ temporarily unreachable IdP does not end connections. Starts and ends are logged
 client and duration, and counted in `sidegate_remote_sessions_total` /
 `sidegate_remote_sessions_active`.
 
-An open connection and the browser (or CLI) share the same session. On each
-replica they share refresh results too, so neither presents a refresh token
-the other already redeemed. That matters with IdPs that accept every
+An open connection and the browser (or CLI) share the same session. They
+share refresh results too (in memory, and via the database once the
+connection has closed or on another replica), so neither presents a refresh
+token the other already redeemed. That matters with IdPs that accept every
 refresh token only once (Entra doesn't).
 
 The demo (`docker compose up`) includes guacd, a Linux desktop (xrdp, sign in
@@ -539,9 +546,13 @@ oidc:
 `amr: [mfa]` if your IdP emits it.
 
 For the sign-in age, the proxy sends `max_age` and `prompt=login`, and checks
-the ID token's `auth_time` (if the IdP omits it, the time of the fresh sign-in
-is used). MFA and sign-in time come from the original sign-in; background
-session refreshes don't change them.
+the ID token's `auth_time`. Without a plausible `auth_time` the sign-in age is
+unknown, and apps with `maxAuthAgeMinutes` refuse access with an
+explanation. **Entra ID** only includes `auth_time` as an optional claim: add
+it under *Token configuration → Add optional claim → ID → auth_time*. MFA
+and sign-in time come from the original sign-in; background session
+refreshes don't change them. A long RDP/SSH connection therefore ends once
+the app's max sign-in age has passed.
 
 Environment: `SIDEGATE_OIDC_MFA_AMR`, `SIDEGATE_OIDC_MFA_ACR` (comma-separated),
 `SIDEGATE_OIDC_MFA_AUTH_PARAMS` (URL query syntax, e.g. `acr_values=gold`).

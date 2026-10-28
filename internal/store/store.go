@@ -190,6 +190,17 @@ var migrations = [][]string{
 			value TEXT NOT NULL
 		)`,
 	},
+	{
+		// The newest refreshed state of each session (sealed by the
+		// server), so clients holding an older copy continue from it on
+		// any replica instead of redeeming a rotated refresh token.
+		`CREATE TABLE session_states (
+			id      TEXT PRIMARY KEY,
+			gen     BIGINT NOT NULL,
+			data    TEXT NOT NULL,
+			expires BIGINT NOT NULL
+		)`,
+	},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -672,6 +683,32 @@ func (s *Store) EndSession(ctx context.Context, id string, expires int64) error 
 		_, err := tx.ExecContext(ctx, `UPDATE meta SET value = value + 1 WHERE key = 'sessions_revision'`)
 		return err
 	})
+}
+
+// SessionState returns the stored state of session id if it is newer than
+// generation gen.
+func (s *Store) SessionState(ctx context.Context, id string, gen int64) (data string, ok bool, err error) {
+	err = s.db.QueryRowContext(ctx, s.q(`SELECT data FROM session_states WHERE id = ? AND gen > ? AND expires > ?`),
+		id, gen, time.Now().Unix()).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return data, err == nil, err
+}
+
+// SaveSessionState stores data as generation gen of session id, unless a
+// newer generation is stored already.
+func (s *Store) SaveSessionState(ctx context.Context, id string, gen int64, data string, expires int64) error {
+	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO session_states (id, gen, data, expires) VALUES (?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET gen = excluded.gen, data = excluded.data, expires = excluded.expires
+		WHERE session_states.gen < excluded.gen`), id, gen, data, expires)
+	return err
+}
+
+// PruneSessionStates deletes the states of expired sessions.
+func (s *Store) PruneSessionStates(ctx context.Context, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, s.q(`DELETE FROM session_states WHERE expires <= ?`), now.Unix())
+	return err
 }
 
 // Setting returns the value stored under key, or "" if there is none.

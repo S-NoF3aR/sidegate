@@ -38,6 +38,7 @@ type Server struct {
 	refreshInterval time.Duration
 	sessions        *session.Codec
 	states          *session.Codec
+	refreshed       *session.Codec // newest session states in the store
 	refreshes       refreshGroup
 
 	oauth          *oauth2.Config
@@ -147,9 +148,10 @@ func (a *app) isPublicPath(u *url.URL) bool {
 
 // stepUp reports whether sess must sign in again before using the app:
 // with MFA, and/or because the last authentication is older than maxAge
-// seconds (0 if recent enough).
+// seconds or of unknown age (0 if recent enough).
 func (a *app) stepUp(sess *session.Session) (mfa bool, maxAge int) {
-	if a.MaxAuthAgeMinutes > 0 && time.Since(time.Unix(sess.AuthTime, 0)) > time.Duration(a.MaxAuthAgeMinutes)*time.Minute {
+	if a.MaxAuthAgeMinutes > 0 && (sess.AuthTime == 0 ||
+		time.Since(time.Unix(sess.AuthTime, 0)) > time.Duration(a.MaxAuthAgeMinutes)*time.Minute) {
 		return a.RequireMFA, a.MaxAuthAgeMinutes * 60
 	}
 	return a.RequireMFA && !sess.MFA, 0
@@ -199,6 +201,10 @@ func New(ctx context.Context, cfg *config.Config, st *store.Store, log *slog.Log
 	if err != nil {
 		return nil, err
 	}
+	refreshed, err := session.NewCodec(cfg.Session.Secret, "session-state")
+	if err != nil {
+		return nil, err
+	}
 	tmpl, err := parseTemplates(public.String(), cfg.SourceURL)
 	if err != nil {
 		return nil, err
@@ -242,6 +248,7 @@ func New(ctx context.Context, cfg *config.Config, st *store.Store, log *slog.Log
 		refreshInterval: cfg.OIDC.RefreshInterval,
 		sessions:        sessions,
 		states:          states,
+		refreshed:       refreshed,
 		oauth: &oauth2.Config{
 			ClientID:     cfg.OIDC.ClientID,
 			ClientSecret: cfg.OIDC.ClientSecret,
@@ -371,7 +378,7 @@ func (s *Server) pruneAudit(ctx context.Context, now time.Time) {
 
 // Watch polls the database revision and syncs when another replica (or a
 // direct database edit that bumps the revision) changed something. Once an
-// hour it also prunes the audit log.
+// hour it also prunes the audit log and expired session states.
 func (s *Server) Watch(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -385,6 +392,9 @@ func (s *Server) Watch(ctx context.Context, interval time.Duration) {
 		if time.Since(pruned) >= time.Hour {
 			pruned = time.Now()
 			s.pruneAudit(ctx, pruned)
+			if err := s.store.PruneSessionStates(ctx, pruned); err != nil {
+				s.log.Warn("prune session states", "error", err)
+			}
 		}
 		rev, sessionsRev, err := s.store.Revisions(ctx)
 		if err != nil {
@@ -524,7 +534,8 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, a *app) {
 	if sess == nil && a.Protocol() != "" {
 		sess = s.authenticateBearer(w, r) // Sidegate CLI
 	}
-	if !a.Public && !a.isPublicPath(r.URL) {
+	protected := !a.Public && !a.isPublicPath(r.URL)
+	if protected {
 		if sess == nil {
 			s.metrics.denied.WithLabelValues(a.Name, "unauthenticated").Inc()
 			s.emit(userEvent(EventAccessDenied, nil, a.Name, map[string]string{"reason": "unauthenticated"}))
@@ -551,7 +562,16 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request, a *app) {
 		s.serveRemote(w, r, a, sess)
 		return
 	}
-	a.proxy.ServeHTTP(w, r.WithContext(withSession(r.Context(), sess)))
+	ctx := withSession(r.Context(), sess)
+	if protected && r.Header.Get("Upgrade") != "" {
+		// An upgraded connection (e.g. a WebSocket) outlives this request's
+		// checks; the reverse proxy closes it when ctx ends.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		go s.watchSession(ctx, a, sess, func(string) { cancel() })
+	}
+	a.proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
 // visibleApps returns the apps listed in the portal for sess.

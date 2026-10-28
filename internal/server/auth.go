@@ -228,6 +228,11 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 			"This application requires a sign-in with multi-factor authentication, but the identity provider didn't confirm one. Sign out and sign in again with MFA, or contact your administrator.")
 		return
 	}
+	if st.MaxAge > 0 && sess.AuthTime == 0 {
+		s.renderError(w, r, http.StatusForbidden, "Fresh sign-in required",
+			"This application requires a recent sign-in, but the identity provider didn't confirm when you signed in (auth_time). Contact your administrator.")
+		return
+	}
 	if st.MaxAge > 0 && now.Unix()-sess.AuthTime > int64(st.MaxAge)+60 {
 		s.renderError(w, r, http.StatusForbidden, "Fresh sign-in required",
 			"This application requires a recent sign-in, but the identity provider reused an older one. Sign out and sign in again.")
@@ -293,8 +298,8 @@ func (s *Server) identity(idt *oidc.IDToken) (*session.Session, error) {
 	return sess, nil
 }
 
-// authStrength returns when the user authenticated and whether that
-// included MFA, judged by the configured amr/acr values.
+// authStrength returns when the user authenticated (0 if unknown) and
+// whether that included MFA, judged by the configured amr/acr values.
 func (s *Server) authStrength(idt *oidc.IDToken, now time.Time) (authTime int64, mfa bool) {
 	var claims struct {
 		AuthTime float64 `json:"auth_time"`
@@ -303,11 +308,13 @@ func (s *Server) authStrength(idt *oidc.IDToken, now time.Time) (authTime int64,
 		ACRS     []any   `json:"acrs"` // Entra ID authentication contexts
 	}
 	if err := idt.Claims(&claims); err != nil {
-		return now.Unix(), false
+		return 0, false
 	}
+	// Without a plausible auth_time, the IdP may have reused an old sign-in
+	// without saying so; 0 (unknown) fails every sign-in age requirement.
 	authTime = int64(claims.AuthTime)
 	if authTime <= 0 || authTime > now.Unix()+60 {
-		authTime = now.Unix() // the IdP didn't say; the sign-in just happened
+		authTime = 0
 	}
 	has := func(values []string, got []string) bool {
 		for _, g := range got {

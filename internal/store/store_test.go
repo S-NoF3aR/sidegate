@@ -203,6 +203,36 @@ func TestUpgradeFromV1(t *testing.T) {
 	}
 }
 
+func TestSessionStates(t *testing.T) {
+	for name, s := range openStores(t) {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			exp := time.Now().Add(time.Hour).Unix()
+			if _, ok, err := s.SessionState(ctx, "s1", 0); ok || err != nil {
+				t.Fatalf("missing state: %v %v", ok, err)
+			}
+			s.SaveSessionState(ctx, "s1", 2, "two", exp)
+			s.SaveSessionState(ctx, "s1", 1, "one", exp) // older: ignored
+			if data, ok, _ := s.SessionState(ctx, "s1", 1); !ok || data != "two" {
+				t.Errorf("state = %q %v, want two", data, ok)
+			}
+			if _, ok, _ := s.SessionState(ctx, "s1", 2); ok {
+				t.Error("state not newer than gen 2 returned")
+			}
+			s.SaveSessionState(ctx, "s2", 1, "gone", time.Now().Add(-time.Second).Unix())
+			if _, ok, _ := s.SessionState(ctx, "s2", 0); ok {
+				t.Error("expired state returned")
+			}
+			if err := s.PruneSessionStates(ctx, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok, _ := s.SessionState(ctx, "s1", 0); !ok {
+				t.Error("live state pruned")
+			}
+		})
+	}
+}
+
 func TestSettings(t *testing.T) {
 	for name, s := range openStores(t) {
 		t.Run(name, func(t *testing.T) {

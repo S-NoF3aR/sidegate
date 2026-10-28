@@ -160,7 +160,9 @@ func TestLiveSessionSharesRefreshes(t *testing.T) {
 	defer ws.CloseNow()
 	readMsg(t, ws)
 
-	// Interleave browser requests with the watcher's checks.
+	// Interleave browser requests with the watcher's checks. A silent
+	// re-login by the mock IdP must not hide a lost session.
+	noRedirects(e)
 	for i := range 10 {
 		if resp, _ := e.get(t, e.url("whoami", "/")); resp.StatusCode != 200 {
 			t.Fatalf("browser request %d: %d", i, resp.StatusCode)

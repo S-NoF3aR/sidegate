@@ -376,8 +376,8 @@ func (s *Server) trackRemote(a *app, sess *session.Session, client string) func(
 }
 
 // watchSession periodically re-checks a live connection's session and calls
-// end if it expired, was revoked (by an admin or the IdP), or the user lost
-// access to the app.
+// end if it expired, was revoked (by an admin or the IdP), the user lost
+// access to the app, or the app now needs a stronger or more recent sign-in.
 func (s *Server) watchSession(ctx context.Context, a *app, sess *session.Session, end func(reason string)) {
 	s.live.add(sess)
 	defer s.live.remove(sess)
@@ -410,6 +410,8 @@ func (s *Server) watchSession(ctx context.Context, a *app, sess *session.Session
 				why = s.revocationReason(sess)
 			case cur == nil || cur.Protocol() != a.Protocol() || !cur.allows(sess):
 				why = "your access was removed"
+			case stepUpNeeded(cur, sess):
+				why = "this application requires you to sign in again"
 			}
 		}
 		if why != "" {
@@ -418,6 +420,11 @@ func (s *Server) watchSession(ctx context.Context, a *app, sess *session.Session
 			return
 		}
 	}
+}
+
+func stepUpNeeded(a *app, sess *session.Session) bool {
+	mfa, maxAge := a.stepUp(sess)
+	return mfa || maxAge > 0
 }
 
 func clampInt(v string, lo, hi, def int) int {
