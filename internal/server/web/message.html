@@ -1,0 +1,13 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+{{define "message"}}{{template "head" .Title}}
+{{template "topbar" .}}
+<main class="container narrow">
+  <div class="message">
+    {{if .Status}}<p class="status">{{.Status}}</p>{{end}}
+    <h1>{{.Title}}</h1>
+    <p class="muted">{{.Message}}</p>
+    {{if .Link}}<p><a class="btn" href="{{.Link}}">{{.Action}}</a></p>{{end}}
+    {{if .PostTo}}<form method="post" action="{{.PostTo}}"><button class="btn" type="submit">{{.Action}}</button></form>{{end}}
+  </div>
+</main>
+{{template "foot"}}{{end}}

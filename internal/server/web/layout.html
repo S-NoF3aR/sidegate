@@ -1,0 +1,44 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.}}</title>
+<link rel="stylesheet" href="{{portal}}/static/style.css">
+<link rel="icon" href="{{portal}}/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+{{end}}
+
+{{define "topbar"}}
+<header class="topbar">
+  <a class="brand" href="{{portal}}/">
+    <img src="{{portal}}/static/favicon.svg" alt="" width="24" height="24">
+    <span>Apps</span>
+  </a>
+  {{with .User}}
+  <div class="user">
+    {{if $.Admin}}<a class="btn ghost" href="{{portal}}/admin">Admin</a>{{end}}
+    <span class="avatar h{{hue .Subject}}">{{initial .Display}}</span>
+    <span class="who">
+      <span class="name">{{.Display}}</span>
+      {{if and .Email (ne .Email .Display)}}<span class="sub">{{.Email}}</span>{{end}}
+    </span>
+    <form method="post" action="{{portal}}/oauth2/logout">
+      <button type="submit" class="btn ghost">Sign out</button>
+    </form>
+  </div>
+  {{end}}
+</header>
+{{end}}
+
+{{define "foot"}}
+<footer class="site-footer">
+  Sidegate {{version}} ·
+  <a href="{{source}}" rel="noopener">Source code</a> (AGPL-3.0)
+</footer>
+</body>
+</html>
+{{end}}

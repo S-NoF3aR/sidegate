@@ -1,0 +1,13 @@
+Sidegate
+Copyright (C) 2026 Severin Enzler
+
+Sidegate (everything outside terraform-provider-sidegate/) is licensed under
+the GNU Affero General Public License, version 3 only (AGPL-3.0-only); see
+LICENSE.
+
+terraform-provider-sidegate/ is licensed under the Mozilla Public License,
+version 2.0; see terraform-provider-sidegate/LICENSE.
+
+Third-party components and their licenses are listed in
+THIRD_PARTY_NOTICES, shipped with every release and container image
+(generate it with "make notices").

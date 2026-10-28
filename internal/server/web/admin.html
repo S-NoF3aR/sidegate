@@ -1,0 +1,311 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+{{define "admin"}}{{template "head" "Admin"}}
+{{template "topbar" .}}
+<main class="container">
+  <nav class="tabs" aria-label="Admin sections">
+    <a href="{{portal}}/admin" {{if or (eq .Section "apps") (eq .Section "form")}}aria-current="page"{{end}}>Apps</a>
+    <a href="{{portal}}/admin/groups" {{if eq .Section "groups"}}aria-current="page"{{end}}>Groups</a>
+    <a href="{{portal}}/admin/users" {{if eq .Section "users"}}aria-current="page"{{end}}>Users</a>
+    <a href="{{portal}}/admin/tokens" {{if eq .Section "tokens"}}aria-current="page"{{end}}>API tokens</a>
+    <a href="{{portal}}/admin/audit" {{if eq .Section "audit"}}aria-current="page"{{end}}>Audit log</a>
+    {{range .ExtPages}}<a href="{{portal}}{{.Path}}" {{if and (eq $.Section "ext") (eq $.ExtPath .Path)}}aria-current="page"{{end}}>{{.Title}}</a>
+    {{end}}
+  </nav>
+
+  {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+  {{if .Errors}}<div class="alert" role="alert"><ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+
+  {{if eq .Section "apps"}}{{template "admin-apps" .}}
+  {{else if eq .Section "form"}}{{template "admin-form" .}}
+  {{else if eq .Section "groups"}}{{template "admin-groups" .}}
+  {{else if eq .Section "users"}}{{template "admin-users" .}}
+  {{else if eq .Section "tokens"}}{{template "admin-tokens" .}}
+  {{else if eq .Section "audit"}}{{template "admin-audit" .}}
+  {{else if eq .Section "ext"}}{{.ExtBody}}{{end}}
+</main>
+<script src="{{portal}}/static/admin.js" defer></script>
+{{template "foot"}}{{end}}
+
+{{define "admin-apps"}}
+<div class="heading">
+  <div>
+    <h1>Apps</h1>
+    <p class="muted">{{len .Apps}} configured. Each app is served at its own subdomain of {{.Domain}}.</p>
+  </div>
+  <a class="btn" href="{{portal}}/admin/apps/new">New app</a>
+</div>
+{{if .Apps}}
+<input id="admin-filter" type="search" class="table-filter" placeholder="Filter by name, category, upstream…" aria-label="Filter apps" autocomplete="off">
+<div class="table-wrap">
+<table id="admin-apps">
+  <thead><tr><th>App</th><th>Address</th><th>Upstream</th><th>Access</th><th></th></tr></thead>
+  <tbody>
+  {{$prev := "-"}}
+  {{range .Apps}}
+  {{if ne .Category $prev}}{{$prev = .Category}}
+  <tr class="group-row" data-group="{{.Category}}"><th colspan="5">{{if .Category}}{{.Category}}{{else}}Uncategorized{{end}}</th></tr>
+  {{end}}
+  <tr data-group="{{.Category}}" data-search="{{.Name}} {{.Title}} {{.Category}} {{.Subdomain}} {{.Upstream}} {{range .Access}}{{.}} {{end}}">
+    <td>
+      <span class="title">{{.DisplayTitle}}</span>
+      {{if .Hidden}}<span class="tag">hidden</span>{{end}}
+      <div class="muted small">{{.Name}}</div>
+    </td>
+    <td><a href="{{.URL}}">{{.Subdomain}}.{{$.Domain}}</a></td>
+    <td><code>{{.Upstream}}</code></td>
+    <td>{{range .Access}}<span class="chip">{{.}}</span>{{end}}</td>
+    <td class="actions"><a class="btn ghost small" href="{{portal}}/admin/apps/{{.Name}}">Edit</a></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<div class="empty-state">
+  <h2>No apps yet</h2>
+  <p class="muted">Add the first application that should be reachable through the proxy.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "admin-form"}}
+{{with .Form}}
+<div class="heading">
+  <div>
+    <h1>{{if .New}}New app{{else}}Edit {{.App.DisplayTitle}}{{end}}</h1>
+    <p class="muted"><a href="{{portal}}/admin">← Back to apps</a></p>
+  </div>
+</div>
+<form method="post" action="{{portal}}/admin/apps{{if not .New}}/{{.App.Name}}{{end}}" class="form">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+
+  <fieldset>
+    <legend>General</legend>
+    <label>Name
+      <input name="name" value="{{.App.Name}}" required pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,62}" {{if not .New}}readonly{{end}}>
+      <small>Unique key{{if .New}}, cannot be changed later{{end}}.</small>
+    </label>
+    <label>Subdomain
+      <span class="suffix-input"><input name="subdomain" value="{{.App.Subdomain}}" placeholder="defaults to the name" pattern="[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?"><span>.{{$.Domain}}</span></span>
+    </label>
+    <label>Upstream URL
+      <input name="upstream" value="{{.App.Upstream}}" required placeholder="http://grafana.monitoring.svc:3000">
+    </label>
+    <label>Title <input name="title" value="{{.App.Title}}" placeholder="Shown in the portal"></label>
+    <label>Description <input name="description" value="{{.App.Description}}"></label>
+    <label>Icon <input name="icon" value="{{.App.Icon}}" placeholder="Image URL or an emoji"></label>
+    <label>Category
+      <input name="category" value="{{.App.Category}}" list="categories" placeholder="e.g. Monitoring or Monitoring/Logs">
+      <small>Groups apps in the portal. Use / for subcategories. Leave empty for "Other".</small>
+    </label>
+    <datalist id="categories">{{range $.Categories}}<option value="{{.}}">{{end}}</datalist>
+  </fieldset>
+
+  <fieldset>
+    <legend>Access</legend>
+    <p class="muted small">Users matching any rule can open the app.</p>
+    <label class="check"><input type="checkbox" name="public" {{if .App.Public}}checked{{end}}> Public (no sign-in at all)</label>
+    <label class="check"><input type="checkbox" name="allUsers" {{if .AllUsers}}checked{{end}}> All signed-in users</label>
+    {{if .Groups}}
+    <div class="checks">
+      {{range .Groups}}<label class="check"><input type="checkbox" name="groups" value="{{.ID}}" {{if .Checked}}checked{{end}}> {{.Name}} <code class="muted small">{{.ID}}</code></label>{{end}}
+    </div>
+    {{else}}
+    <p class="muted small">No named groups yet. <a href="{{portal}}/admin/groups">Add groups</a> to pick them here, or enter IDs below.</p>
+    {{end}}
+    <label>Other groups
+      <textarea name="extraGroups" rows="2" placeholder="Group IDs or names, one per line">{{.ExtraGroups}}</textarea>
+    </label>
+    <label>Users
+      <textarea name="users" rows="3" placeholder="Email addresses or usernames, one per line">{{.Users}}</textarea>
+    </label>
+    <label>Public paths
+      <textarea name="publicPaths" rows="3" placeholder="/health&#10;/static/*">{{.PublicPaths}}</textarea>
+      <small>Reachable without sign-in, one per line. <code>/health</code> matches exactly, <code>/static/*</code> everything below <code>/static/</code>. Identity headers are still sent when the visitor is signed in.</small>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Sign-in requirements</legend>
+    <p class="muted small">Users who don't meet these are sent back to the identity provider before they can open the app.</p>
+    <label class="check"><input type="checkbox" name="requireMFA" {{if .App.RequireMFA}}checked{{end}}> Require multi-factor authentication</label>
+    <label>Maximum sign-in age (minutes)
+      <input name="maxAuthAgeMinutes" type="number" min="0" max="525600" value="{{if .App.MaxAuthAgeMinutes}}{{.App.MaxAuthAgeMinutes}}{{end}}" placeholder="Off">
+      <small>Require a sign-in within this many minutes, e.g. 60 for admin consoles. Empty means any valid session.</small>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Host header</legend>
+    <p class="muted small">The <code>Host</code> header sent to the upstream. <code>X-Forwarded-Host</code> always carries the original.</p>
+    <label class="check"><input type="radio" name="hostMode" value="upstream" {{if eq .HostMode "upstream"}}checked{{end}}> Upstream host (from the upstream URL)</label>
+    <label class="check"><input type="radio" name="hostMode" value="original" {{if eq .HostMode "original"}}checked{{end}}> Original host ({{if .App.Subdomain}}{{.App.Subdomain}}{{else}}&lt;subdomain&gt;{{end}}.{{$.Domain}})</label>
+    <label class="check"><input type="radio" name="hostMode" value="custom" {{if eq .HostMode "custom"}}checked{{end}}> Custom:
+      <input name="hostHeader" value="{{.App.HostHeader}}" placeholder="grafana.internal.example.com" class="grow"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Options</legend>
+    <label class="check"><input type="checkbox" name="hidden" {{if .App.Hidden}}checked{{end}}> Hide from the portal</label>
+    <label class="check"><input type="checkbox" name="insecureSkipVerify" {{if .App.InsecureSkipVerify}}checked{{end}}> Skip upstream TLS certificate verification</label>
+  </fieldset>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">{{if .New}}Create app{{else}}Save changes{{end}}</button>
+    <a class="btn ghost" href="{{portal}}/admin">Cancel</a>
+  </div>
+</form>
+{{if not .New}}
+<form method="post" action="{{portal}}/admin/apps/{{.App.Name}}/delete" class="danger-zone" data-confirm="Delete {{.App.DisplayTitle}}? It will be unreachable immediately.">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <div><strong>Delete this app</strong><p class="muted small">Removes the app and its access rules.</p></div>
+  <button class="btn danger" type="submit">Delete app</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "admin-groups"}}
+<div class="heading">
+  <div>
+    <h1>Groups</h1>
+    <p class="muted">Give IdP group IDs (e.g. Entra object IDs) readable names. Named groups can be picked when editing an app and appear by name in <code>X-Forwarded-Groups</code>.</p>
+  </div>
+</div>
+<form method="post" action="{{portal}}/admin/groups" class="form inline">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>Name <input name="name" required placeholder="developers"></label>
+  <label>Group ID <input name="id" required placeholder="33333333-3333-3333-3333-333333333333"></label>
+  <button class="btn" type="submit">Add or rename</button>
+</form>
+{{if .Groups}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Name</th><th>ID</th><th></th></tr></thead>
+  <tbody>
+  {{range .Groups}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td><code>{{.ID}}</code></td>
+    <td class="actions">
+      <form method="post" action="{{portal}}/admin/groups/delete" data-confirm="Remove the name {{.Name}}? Apps keep access for the group ID.">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button class="btn ghost small" type="submit">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}
+
+{{define "admin-audit"}}
+<div class="heading"><div><h1>Audit log</h1><p class="muted">The last 200 changes.</p></div></div>
+{{if .Audit}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Time (UTC)</th><th>Who</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+  <tbody>
+  {{range .Audit}}
+  <tr>
+    <td class="nowrap">{{.At.UTC.Format "2006-01-02 15:04:05"}}</td>
+    <td>{{.Actor}}</td>
+    <td><span class="chip">{{.Action}}</span></td>
+    <td>{{.Target}}</td>
+    <td>{{if .Detail}}<details><summary>show</summary><pre>{{.Detail}}</pre></details>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p class="muted">No changes recorded yet.</p>{{end}}
+{{end}}
+
+{{define "admin-tokens"}}
+<div class="heading">
+  <div>
+    <h1>API tokens</h1>
+    <p class="muted">Tokens for the management API at <code>{{.APIURL}}</code>, e.g. for the Terraform provider. A token can manage all apps and groups.</p>
+  </div>
+</div>
+{{if .NewToken}}
+<div class="token-once" role="status">
+  <strong>Copy the new token now. It won't be shown again.</strong>
+  <input readonly value="{{.NewToken}}" aria-label="New API token" class="token-value" data-select>
+</div>
+{{end}}
+<form method="post" action="{{portal}}/admin/tokens" class="form inline">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label>Name <input name="name" required placeholder="terraform-ci"></label>
+  <button class="btn" type="submit">Create token</button>
+</form>
+{{if .Tokens}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Name</th><th>ID</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+  <tbody>
+  {{range .Tokens}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td><code>{{.ID}}</code></td>
+    <td class="nowrap">{{.CreatedAt.UTC.Format "2006-01-02 15:04"}} <div class="muted small">{{.CreatedBy}}</div></td>
+    <td class="nowrap">{{if .LastUsedAt.IsZero}}<span class="muted">never</span>{{else}}{{.LastUsedAt.UTC.Format "2006-01-02 15:04"}}{{end}}</td>
+    <td class="actions">
+      <form method="post" action="{{portal}}/admin/tokens/delete" data-confirm="Revoke the token {{.Name}}? Anything using it stops working immediately.">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button class="btn ghost small" type="submit">Revoke</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p class="muted">No tokens yet.</p>{{end}}
+{{end}}
+
+{{define "admin-users"}}
+<div class="heading">
+  <div>
+    <h1>Users</h1>
+    <p class="muted">Everyone who signed in through the proxy. "Sign out" ends all of that user's sessions immediately; they can sign in again unless they're also blocked in the identity provider.</p>
+  </div>
+</div>
+{{if .Users}}
+<input id="admin-filter" type="search" class="table-filter" placeholder="Filter by name, email, subject…" aria-label="Filter users" autocomplete="off">
+<div class="table-wrap">
+<table id="admin-apps">
+  <thead><tr><th>User</th><th>Subject</th><th>Last sign-in</th><th>Sign-ins</th><th></th></tr></thead>
+  <tbody>
+  {{range .Users}}
+  <tr data-search="{{.Name}} {{.Email}} {{.Username}} {{.Subject}}">
+    <td><span class="title">{{if .Name}}{{.Name}}{{else if .Username}}{{.Username}}{{else}}{{.Subject}}{{end}}</span>
+      <div class="muted small">{{if .Email}}{{.Email}}{{else}}{{.Username}}{{end}}</div></td>
+    <td><code>{{.Subject}}</code></td>
+    <td class="nowrap">{{if .LastLogin.Unix}}{{.LastLogin.UTC.Format "2006-01-02 15:04"}}{{else}}<span class="muted">never</span>{{end}}
+      {{if not .RevokedBefore.IsZero}}<div class="muted small">signed out {{.RevokedBefore.UTC.Format "2006-01-02 15:04"}}</div>{{end}}</td>
+    <td>{{.Logins}}</td>
+    <td class="actions">
+      <form method="post" action="{{portal}}/admin/users/revoke" data-confirm="Sign out {{if .Name}}{{.Name}}{{else}}{{.Subject}}{{end}} on all devices?">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="subject" value="{{.Subject}}">
+        <button class="btn ghost small" type="submit">Sign out</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p class="muted">Nobody has signed in yet.</p>{{end}}
+
+<form method="post" action="{{portal}}/admin/users/revoke-all" class="danger-zone" data-confirm="Sign out every user, including yourself? Everyone has to sign in again.">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <div><strong>Sign out everyone</strong><p class="muted small">Ends every session, e.g. after a security incident. Includes your own.</p></div>
+  <button class="btn danger" type="submit">Sign out everyone</button>
+</form>
+{{end}}

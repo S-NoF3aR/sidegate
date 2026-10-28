@@ -1,0 +1,80 @@
+# Local demo: sidegate + PostgreSQL + a mock OIDC provider + sample apps.
+#
+#   docker compose up --build
+#   open http://apps.localtest.me:8080
+#
+# *.localtest.me resolves to 127.0.0.1. At the mock login page enter any
+# username and, as claims, e.g.
+#   {"groups": ["admins"], "email": "me@example.com"}
+# Members of "admins" get the admin UI at http://apps.localtest.me:8080/admin.
+# The "desktop" app (rdp://desktop:3389) opens a remote desktop in the browser;
+# sign in to it as ubuntu / ubuntu. The "shell" app (ssh://shell:2222) opens a
+# terminal; sign in as demo / demo.
+services:
+  sidegate:
+    build:
+      context: .
+      args:
+        VERSION: demo
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:8081:8081" # health and Prometheus metrics, internal only
+    environment:
+      SIDEGATE_SESSION_SECRET: demo-only-secret-change-me-0123456789
+      SIDEGATE_DATABASE_URL: postgres://sidegate:sidegate@db:5432/sidegate?sslmode=disable
+      SIDEGATE_GUACD: guacd:4822
+      # Session recording; pick the apps under Admin → Recordings.
+      SIDEGATE_RECORDING_DIR: /data/recordings
+    volumes:
+      - ./deploy/compose/config.yaml:/etc/sidegate/config.yaml:ro
+      - recordings:/data
+    depends_on: [idp, db, guacd]
+
+  # RDP and SSH in the browser (Apache Guacamole's protocol daemon).
+  guacd:
+    image: guacamole/guacd:1.5.5
+
+  # A Linux desktop reachable over RDP (xrdp), user ubuntu / password ubuntu.
+  desktop:
+    image: scottyhardy/docker-remote-desktop:latest
+    shm_size: 1g
+
+  # An SSH server, user demo / password demo.
+  shell:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      USER_NAME: demo
+      USER_PASSWORD: demo
+      PASSWORD_ACCESS: "true"
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sidegate
+      POSTGRES_PASSWORD: sidegate
+      POSTGRES_DB: sidegate
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  idp:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    ports: ["8090:8090"]
+    environment:
+      SERVER_PORT: "8090"
+      JSON_CONFIG: '{"interactiveLogin": true}'
+    networks:
+      default:
+        # Same hostname for the browser (via localtest.me) and the proxy
+        # container, so the issuer URL matches for both.
+        aliases: [idp.localtest.me]
+
+  whoami:
+    image: traefik/whoami:v1.10
+
+  admin-tool:
+    image: traefik/whoami:v1.10
+    command: ["--name", "admin-tool"]
+
+volumes:
+  db:
+  recordings:

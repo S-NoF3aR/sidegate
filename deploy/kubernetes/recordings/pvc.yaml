@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sidegate-recordings
+spec:
+  accessModes: [ReadWriteMany]
+  # storageClassName: azurefile-csi   # or efs-sc, nfs-client, …
+  resources:
+    # Rough guide: tens of KB per minute for SSH, up to several MB per
+    # minute for a busy desktop; kept for recording.retentionDays (90).
+    requests: {storage: 100Gi}

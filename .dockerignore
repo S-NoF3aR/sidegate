@@ -1,0 +1,8 @@
+.git
+deploy
+*.md
+Dockerfile
+compose.yaml
+terraform-provider-sidegate
+dist
+bin

@@ -1,0 +1,52 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+<div class="heading">
+  <div>
+    <h1>Session recordings</h1>
+    <p class="muted">Browser sessions of the RDP and SSH apps selected below are recorded: everything shown on screen, not keystrokes. Users see a notice before they connect. Recordings are kept for {{.Retention}} days{{if .Configured}} in <code>{{.Dir}}</code>{{end}}; every playback is written to the audit log.</p>
+  </div>
+</div>
+{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+{{if .Error}}<div class="alert" role="alert">{{.Error}}</div>{{end}}
+{{if not .Configured}}
+<div class="alert" role="alert">Recording is not configured. Set <code>recording.dir</code> in the config file (or <code>SIDEGATE_RECORDING_DIR</code>) to a directory, shared by all replicas, and restart the proxy.</div>
+{{end}}
+
+<form method="post" action="/admin/recordings/settings" class="form">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <fieldset {{if not .Configured}}disabled{{end}}>
+    <legend>Record browser sessions of</legend>
+    <p class="muted small">Sessions through the Sidegate CLI (mstsc, ssh, VS Code, …) are end-to-end encrypted between the user's client and the host, so they can't be recorded. They stay allowed and are logged with user, start and duration.</p>
+    {{if .Apps}}
+    <div class="checks">
+      {{range .Apps}}<label class="check"><input type="checkbox" name="app" value="{{.Name}}" {{if .Recorded}}checked{{end}}> {{.Title}} <span class="chip">{{.Protocol}}</span></label>{{end}}
+    </div>
+    {{else}}<p class="muted">There are no RDP or SSH apps yet.</p>{{end}}
+  </fieldset>
+  {{if and .Configured .Apps}}<div class="form-actions"><button class="btn" type="submit">Save</button></div>{{end}}
+</form>
+
+{{if .Configured}}
+<h2 class="rec-heading">Recordings</h2>
+{{if .Recordings}}
+<p class="muted small">{{len .Recordings}} recordings, {{size .Total}}{{if ge (len .Recordings) 1000}} (newest 1000 shown){{end}}.</p>
+<input id="admin-filter" type="search" class="table-filter" placeholder="Filter by user, app, date…" aria-label="Filter recordings" autocomplete="off">
+<div class="table-wrap">
+<table id="admin-apps">
+  <thead><tr><th>Started (UTC)</th><th>User</th><th>App</th><th>Duration</th><th>Size</th><th>Ended</th><th></th></tr></thead>
+  <tbody>
+  {{range .Recordings}}
+  <tr data-search="{{.Start.Format "2006-01-02 15:04"}} {{.Who}} {{.User}} {{.Email}} {{.App}} {{.Title}}">
+    <td class="nowrap">{{.Start.Format "2006-01-02 15:04:05"}}</td>
+    <td>{{.Who}}{{if and .Email (ne .Email .Who)}}<div class="muted small">{{.Email}}</div>{{end}}</td>
+    <td>{{.Title}} <span class="chip">{{.Protocol}}</span></td>
+    <td class="nowrap">{{if .End.IsZero}}<span class="muted">running or incomplete</span>{{else}}{{duration .Duration}}{{end}}</td>
+    <td class="nowrap">{{size .Bytes}}</td>
+    <td class="muted small">{{.Reason}}</td>
+    <td class="actions"><a class="btn ghost small" href="/admin/recordings/{{.ID}}">Play</a></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p class="muted">No recordings yet.</p>{{end}}
+{{end}}

@@ -1,0 +1,16 @@
+# For the Prometheus Operator (kube-prometheus-stack). Not enabled by
+# default because it needs the operator's CRDs: add this file to
+# kustomization.yaml. Without the operator, the pods' prometheus.io
+# annotations work for annotation-based scraping.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sidegate
+  labels: {app.kubernetes.io/name: sidegate}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: sidegate}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

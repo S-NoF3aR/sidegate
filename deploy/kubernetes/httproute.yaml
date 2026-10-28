@@ -1,0 +1,30 @@
+# Routes the portal host and every app subdomain to the proxy (Gateway API;
+# e.g. Envoy Gateway, Cilium, Istio, NGINX Gateway Fabric, Traefik or your
+# cloud's gateway). The referenced Gateway needs an HTTPS listener with a
+# certificate for apps.example.com and *.apps.example.com; with
+# cert-manager, wildcard certificates require a DNS-01 solver.
+#
+# Sidegate's traffic needs from the gateway:
+# - no request timeout: RDP/SSH WebSockets stay open for hours and app
+#   downloads can be long ("timeouts" below; Sidegate pings tunnels every
+#   25 s, so idle timeouts above that are fine);
+# - streamed, unbuffered responses (server-sent events, downloads);
+# - request and response headers up to ~32 KB: the session cookies can
+#   reach ~15 KB with large refresh tokens and many groups. Envoy-based
+#   gateways allow 60 KB by default; others configure it in their own
+#   policy resources.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sidegate
+spec:
+  parentRefs:
+    - name: public-gateway
+      namespace: gateway-system
+  hostnames: [apps.example.com, "*.apps.example.com"]
+  rules:
+    - backendRefs:
+        - name: sidegate
+          port: 80
+      timeouts:
+        request: "0s" # disabled

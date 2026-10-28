@@ -1,0 +1,37 @@
+# Alternative to httproute.yaml for clusters that still use an Ingress
+# controller (note that ingress-nginx is retired: no releases or security
+# fixes since March 2026; prefer the Gateway API). Swap it for
+# httproute.yaml in kustomization.yaml.
+#
+# Your controller must support WebSockets and be configured, with its own
+# annotations or settings, for:
+# - long request/read timeouts (≥ 1 h, or none) for RDP/SSH WebSockets;
+# - unbuffered responses (server-sent events, downloads) and uploads
+#   without a size limit;
+# - request and response headers up to ~32 KB (session cookies).
+#
+# TLS needs a certificate for apps.example.com and *.apps.example.com.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sidegate
+spec:
+  # ingressClassName: <your-class>   # omit to use the cluster's default class
+  tls:
+    - hosts: [apps.example.com, "*.apps.example.com"]
+      secretName: sidegate-tls
+  rules:
+    - host: apps.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: sidegate, port: {name: http}}
+    - host: "*.apps.example.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: sidegate, port: {name: http}}

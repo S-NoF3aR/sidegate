@@ -1,0 +1,18 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+<div class="heading">
+  <div>
+    <h1>{{.Title}} <span class="chip">{{.Protocol}}</span></h1>
+    <p class="muted">{{.Who}}{{if and .Email (ne .Email .Who)}} ({{.Email}}){{end}} · started {{.Start.Format "2006-01-02 15:04:05"}} UTC{{if not .End.IsZero}} · {{duration .Duration}} · {{.Reason}}{{end}}</p>
+  </div>
+  <a class="btn ghost" href="/admin/recordings">All recordings</a>
+</div>
+<div class="rec-player" id="player" data-src="/admin/recordings/{{.ID}}/data">
+  <div class="rec-screen" id="player-screen"></div>
+  <div class="rec-controls">
+    <button class="btn small" id="play" type="button" disabled>Play</button>
+    <input type="range" id="seek" min="0" max="0" value="0" step="100" disabled aria-label="Position">
+    <span id="time" class="muted small nowrap">0:00 / 0:00</span>
+  </div>
+  <p class="muted small" id="player-status" role="status">Loading the recording…</p>
+</div>
+<script type="module" src="/static/recordings.js"></script>

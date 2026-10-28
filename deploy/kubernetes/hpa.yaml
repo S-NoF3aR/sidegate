@@ -1,0 +1,22 @@
+# Scales the proxy on CPU. Needs metrics-server (standard on AKS, EKS, GKE).
+# Scaling down ends the RDP/SSH sessions on removed pods (users are asked
+# to reconnect), hence the slow scale-down. guacd is deliberately not
+# autoscaled, see guacd.yaml.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sidegate
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: sidegate}
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 75}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 1800
+      policies:
+        - {type: Pods, value: 1, periodSeconds: 600}

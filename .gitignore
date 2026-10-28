@@ -1,0 +1,9 @@
+/sidegate
+/sidegate-server
+/bin/
+/config.yaml
+.env
+*.exe
+/dist/
+/CLAUDE.md
+/.ai/

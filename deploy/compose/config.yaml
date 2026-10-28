@@ -1,0 +1,64 @@
+# Startup settings for the local demo. Secrets and the database URL come
+# from WEBPROXY_* variables in compose.yaml.
+publicURL: http://apps.localtest.me:8080
+domain: localtest.me
+logLevel: debug
+
+session:
+  lifetime: 8h
+
+oidc:
+  issuer: http://idp.localtest.me:8090/default
+  clientID: webproxy
+  clientSecret: unused-by-mock
+  scopes: [openid, profile, email, offline_access]
+  refreshInterval: 30s
+
+# Members of these IdP groups can use the admin UI at /admin.
+admin:
+  groups: [admins]
+
+# Imported into the database on first start only. Afterwards, manage apps
+# and groups in the admin UI.
+groups:
+  admins: admins
+  developers: developers
+
+apps:
+  - name: whoami
+    title: Who Am I
+    description: Echoes the request, including the identity headers set by the proxy.
+    icon: "👋"
+    category: Tools
+    upstream: http://whoami:80
+    allowedGroups: [developers, admins]
+
+  - name: admin
+    title: Admin Tool
+    description: Only for the admins group.
+    icon: "🛠️"
+    category: Tools/Admin
+    upstream: http://admin-tool:80
+    allowedGroups: [admins]
+
+  - name: desktop
+    title: Linux Desktop
+    description: Remote desktop in the browser (user ubuntu, password ubuntu).
+    icon: "🖥️"
+    category: Desktops
+    upstream: rdp://desktop:3389?security=any&ignore-cert=true
+    allowedGroups: [developers, admins]
+
+  - name: shell
+    title: Linux Shell
+    description: SSH terminal in the browser (user demo, password demo).
+    icon: "⌨️"
+    category: Servers
+    upstream: ssh://shell:2222
+    allowedGroups: [developers, admins]
+
+  - name: status
+    title: Status Page
+    description: Public, no sign-in required.
+    upstream: http://whoami:80
+    public: true

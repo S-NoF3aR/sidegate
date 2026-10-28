@@ -1,0 +1,28 @@
+# Lets only the gateway (or ingress controller) reach the proxy, and only
+# Prometheus its metrics. Not enabled by default: adjust the namespace
+# labels to where your gateway's proxy pods and your monitoring run, then
+# add this file to
+# kustomization.yaml. Needs a CNI that enforces NetworkPolicy (Calico,
+# Cilium, …). Kubelet health probes are not affected.
+#
+# Outgoing traffic is not restricted: the proxy has to reach the IdP, the
+# database, guacd and every app's upstream.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sidegate
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: sidegate}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: gateway-system}
+      ports:
+        - {protocol: TCP, port: 8080}
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 8081}

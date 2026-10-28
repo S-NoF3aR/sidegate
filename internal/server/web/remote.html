@@ -1,0 +1,38 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+{{define "remote"}}{{template "head" .App.DisplayTitle}}
+<div class="rdp" id="rdp" data-username="{{.Username}}" data-browser="{{.Browser}}" data-protocol="{{.Protocol}}">
+  <header class="rdp-bar">
+    <a class="brand" href="{{portal}}/" title="Back to apps">
+      <img src="{{portal}}/static/favicon.svg" alt="" width="22" height="22">
+      <span>{{.App.DisplayTitle}}</span>
+    </a>
+    <span class="rdp-status" id="status" role="status">Connecting…</span>
+    {{if .Notices}}<span class="chip rdp-recorded" title="{{index .Notices 0}}">Recorded</span>{{end}}
+    <div class="rdp-actions">
+      {{if eq .Protocol "rdp"}}<button class="btn ghost small" id="cad" type="button" disabled title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</button>{{end}}
+      <button class="btn ghost small" id="fullscreen" type="button">Full screen</button>
+      <button class="btn ghost small" id="disconnect" type="button" disabled>Disconnect</button>
+    </div>
+  </header>
+  <main class="rdp-screen" id="screen" tabindex="-1"></main>
+  <div class="rdp-overlay" id="overlay">
+    <div class="rdp-card">
+      <div id="message"><h1>Connecting…</h1><p class="muted">Connecting to {{.App.DisplayTitle}}.</p></div>
+      {{range .Notices}}<p class="rdp-notice" role="note">{{.}}</p>{{end}}
+      <form id="credentials" class="form" hidden>
+        <div><h1>Sign in to {{.App.DisplayTitle}}</h1><p class="muted">{{if eq .Protocol "ssh"}}The server asks for your SSH credentials.{{else}}The remote computer asks for your Windows credentials.{{end}}</p></div>
+        <label data-param="username">Username <input name="username" autocomplete="username" spellcheck="false"></label>
+        <label data-param="password">Password <input name="password" type="password" autocomplete="current-password"></label>
+        <label data-param="domain">Domain <input name="domain" spellcheck="false"></label>
+        <button class="btn" type="submit">Connect</button>
+      </form>
+      <div id="actions" class="form-actions" hidden>
+        <button class="btn" id="reconnect" type="button">Reconnect</button>
+        <a class="btn ghost" href="{{portal}}/">Back to apps</a>
+      </div>
+      <p class="muted small cli-hint">Prefer your own {{if eq .Protocol "ssh"}}SSH{{else}}RDP{{end}} client? Run <code>sidegate {{.Protocol}} {{.App.Name}}</code> (<a href="{{portal}}/cli">get sidegate</a>)</p>
+    </div>
+  </div>
+</div>
+<script type="module" src="/.sidegate/static/remote.js"></script>
+{{template "foot"}}{{end}}

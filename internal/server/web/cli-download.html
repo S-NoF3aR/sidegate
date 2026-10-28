@@ -1,0 +1,168 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+{{define "cli"}}{{template "head" "Sidegate CLI"}}
+{{template "topbar" .}}
+<main class="container cli-page">
+  <div class="heading">
+    <div>
+      <h1>Sidegate CLI</h1>
+      <p class="muted">Connect your own RDP and SSH clients (Remote Desktop, ssh, scp, rsync, VS Code, …) to remote apps behind this proxy, with your usual sign-in.{{with .Downloads}} Version <code>{{.Version}}</code>.{{end}}</p>
+    </div>
+  </div>
+
+  {{if .Downloads}}
+  <p class="toc small">On this page: <a href="#install">Install</a> · <a href="#login">Sign in</a> · <a href="#rdp">Remote desktop</a> · <a href="#ssh">SSH</a> · <a href="#troubleshooting">Troubleshooting</a> · <a href="#reference">Commands</a></p>
+  <div class="tabs os-tabs" role="tablist" aria-label="Operating system" id="install">
+    <button type="button" role="tab" data-os="windows">Windows</button>
+    <button type="button" role="tab" data-os="linux">Linux</button>
+    <button type="button" role="tab" data-os="darwin">macOS</button>
+  </div>
+
+  <section class="os-panel" data-os-panel="windows">
+    <h2>1. Install</h2>
+    <p>Run in <strong>PowerShell</strong>; no administrator rights needed:</p>
+    {{template "cli-code" (printf "irm %s/cli/install.ps1 | iex" .Portal)}}
+    <p class="muted small">Installs to <code>%LOCALAPPDATA%\Programs\sidegate</code>, checks the checksum and adds the folder to your PATH. Open a new terminal afterwards. Or download it yourself:</p>
+    {{template "cli-files" (.Downloads.ForOS "windows")}}
+    <p class="muted small">You need: <strong>Remote Desktop Connection</strong> (mstsc) for RDP and the <strong>OpenSSH client</strong> for SSH, both included in Windows 10 and 11.</p>
+  </section>
+
+  <section class="os-panel" data-os-panel="linux" hidden>
+    <h2>1. Install</h2>
+    {{template "cli-code" (printf "curl -fsSL %s/cli/install.sh | sh" .Portal)}}
+    <p class="muted small">Installs to <code>~/.local/bin</code> (set <code>SIDEGATE_CLI_DIR</code> to change it) and checks the checksum. Or download it yourself:</p>
+    {{template "cli-files" (.Downloads.ForOS "linux")}}
+    <p class="muted small">You need: an RDP client for RDP, e.g. <code>sudo apt install freerdp3-x11</code>, <code>sudo dnf install freerdp</code> or Remmina; <code>ssh</code> for SSH. Sign-in opens your browser via <code>xdg-open</code>, so run it on a machine with a desktop.</p>
+  </section>
+
+  <section class="os-panel" data-os-panel="darwin" hidden>
+    <h2>1. Install</h2>
+    {{template "cli-code" (printf "curl -fsSL %s/cli/install.sh | sh" .Portal)}}
+    <p class="muted small">Installs to <code>~/.local/bin</code> and checks the checksum. Downloaded with a browser instead, macOS quarantines the file; clear that with <code>xattr -d com.apple.quarantine sidegate-darwin-*</code>.</p>
+    {{template "cli-files" (.Downloads.ForOS "darwin")}}
+    <p class="muted small">You need: <strong>Windows App</strong> (formerly Microsoft Remote Desktop) from the App Store for RDP; <code>ssh</code> is built in.</p>
+  </section>
+
+  <p class="muted small">The Sidegate CLI is free software under the <a href="{{portal}}/cli/download/LICENSE">GNU AGPL v3</a>: <a href="{{source}}" rel="noopener">source code</a> · <a href="{{portal}}/cli/download/THIRD_PARTY_NOTICES">third-party notices</a> · <a href="{{portal}}/cli/download/SHA256SUMS">checksums</a>.</p>
+
+  <h2 id="login">2. Sign in</h2>
+  <p>Once per computer; it opens your browser:</p>
+  {{template "cli-code" (printf "sidegate login %s" .Portal)}}
+
+  {{$rdp := "win1"}}{{with .RDP}}{{$rdp = (index . 0).Name}}{{end}}
+  {{$ssh := "bastion"}}{{with .SSH}}{{$ssh = (index . 0).Name}}{{end}}
+  {{if not (or .RDP .SSH)}}
+  <p class="muted">You don't have access to any RDP or SSH apps yet, so the guides below use example names. Once you have access, <code>sidegate apps</code> lists your apps.</p>
+  {{end}}
+
+  <div class="tabs os-tabs howto-tabs" role="tablist" aria-label="Show steps for">
+    <button type="button" role="tab" data-os="windows">Windows</button>
+    <button type="button" role="tab" data-os="linux">Linux</button>
+    <button type="button" role="tab" data-os="darwin">macOS</button>
+  </div>
+
+  <h2 id="rdp">How to: remote desktop (RDP)</h2>
+  <ol class="steps">
+    <li>
+      <p>Start the tunnel{{with .RDP}} to {{(index . 0).Title}}{{end}}. It opens your RDP client automatically:</p>
+      {{template "cli-code" (printf "sidegate rdp %s -port 13389" $rdp)}}
+      <p class="muted small">A fixed <code>-port</code> lets your RDP client remember settings and saved credentials for this desktop; use a different port per desktop. Without it, a free port is picked each time.</p>
+    </li>
+    <li>
+      <div data-os-panel="windows"><p><strong>Remote Desktop Connection</strong> (mstsc) opens and connects to <code>127.0.0.1:13389</code>. Enter your <strong>Windows credentials</strong> for the remote computer, e.g. <code>CORP\alice</code>.</p></div>
+      <div data-os-panel="linux" hidden><p><strong>FreeRDP</strong> (or Remmina) opens and connects to <code>127.0.0.1:13389</code>. Enter the credentials for the remote computer when asked.</p></div>
+      <div data-os-panel="darwin" hidden><p><strong>Windows App</strong> (Microsoft Remote Desktop) opens a connection to <code>127.0.0.1:13389</code>. Enter the credentials for the remote computer when asked.</p></div>
+    </li>
+    <li>
+      <p>Your client may warn that <strong>the remote computer's identity can't be verified</strong>, because it connects to <code>127.0.0.1</code> while the certificate carries the server's real name. Check that the certificate name is the computer you expect, then continue.</p>
+    </li>
+    <li>
+      <p>Keep the terminal open while you work. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> in it to stop the tunnel when you're done.</p>
+    </li>
+  </ol>
+  <p class="muted small">Prefer another RDP client, or none opened? Start only the tunnel and connect any client to <code>127.0.0.1:13389</code>:</p>
+  {{template "cli-code" (printf "sidegate tunnel %s -port 13389" $rdp)}}
+
+  <h2 id="ssh">How to: SSH, scp, rsync and VS Code</h2>
+  <h3>Quick: one command</h3>
+  <p>Runs your normal <code>ssh</code> through the proxy. Use your usual SSH username and key or password for the server; everything after the app name is passed to <code>ssh</code>:</p>
+  {{template "cli-code" (printf "sidegate ssh alice@%s" $ssh)}}
+  {{template "cli-code" (printf "sidegate ssh alice@%s uptime                 # run a command\nsidegate ssh alice@%s -i ~/.ssh/id_work      # pick a key\nsidegate ssh alice@%s -L 5432:localhost:5432 # forward a port" $ssh $ssh $ssh)}}
+
+  <h3>Recommended: SSH config, for every SSH tool</h3>
+  <ol class="steps">
+    <li>
+      <div data-os-panel="windows">
+        <p>Add this to <code>%USERPROFILE%\.ssh\config</code> (create the file if needed), replacing <code>&lt;you&gt;</code> with your Windows user folder:</p>
+        {{template "cli-code" (printf "Host *.%s\n    User alice\n    ProxyCommand C:\\Users\\<you>\\AppData\\Local\\Programs\\sidegate\\sidegate.exe proxy %%h" .Domain)}}
+      </div>
+      <div data-os-panel="linux" hidden>
+        <p>Add this to <code>~/.ssh/config</code>:</p>
+        {{template "cli-code" (printf "Host *.%s\n    User alice\n    ProxyCommand sidegate proxy %%h" .Domain)}}
+      </div>
+      <div data-os-panel="darwin" hidden>
+        <p>Add this to <code>~/.ssh/config</code>:</p>
+        {{template "cli-code" (printf "Host *.%s\n    User alice\n    ProxyCommand ~/.local/bin/sidegate proxy %%h" .Domain)}}
+      </div>
+      <p class="muted small">Replace <code>alice</code> with your username on the servers, or leave out the <code>User</code> line.</p>
+    </li>
+    <li>
+      <p>Use every SSH-based tool with the app's address, as if the server were directly reachable:</p>
+      {{template "cli-code" (printf "ssh %s.%s\nscp report.pdf %s.%s:/tmp/\nrsync -av ./site/ %s.%s:/var/www/\nsftp %s.%s" $ssh .Domain $ssh .Domain $ssh .Domain $ssh .Domain)}}
+    </li>
+    <li>
+      <p><strong>VS Code:</strong> install the <em>Remote - SSH</em> extension, run <em>Remote-SSH: Connect to Host…</em> and enter <code>{{$ssh}}.{{.Domain}}</code>. VS Code reads the same SSH config.</p>
+    </li>
+  </ol>
+  <p class="muted small">The first time you connect, ssh asks you to confirm the server's <strong>host key fingerprint</strong>. Compare it with what your administrator published before answering <em>yes</em>. ssh then remembers it under the app's name.</p>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+  <dl class="faq">
+    <dt>The browser opens again to sign in</dt>
+    <dd>Your sign-in expired, or this app requires multi-factor authentication or a recent sign-in. Complete the sign-in and the connection continues.</dd>
+    <dt>"you don't have access to this app" or "no app … among your apps"</dt>
+    <dd>Check the name with <code>sidegate apps</code>. If the app isn't listed, ask your administrator for access.</dd>
+    <dt>The connection drops with "closed by remote host"</dt>
+    <dd>Your session ended: you signed out, an administrator signed you out, your access was removed, or your account changed at the identity provider. Run the command again to sign in.</dd>
+    <dt>"No RDP client found"</dt>
+    <dd>
+      <span data-os-panel="windows">Remote Desktop Connection (<code>mstsc</code>) should be part of Windows; check that it isn't removed by policy.</span>
+      <span data-os-panel="linux" hidden>Install one: <code>sudo apt install freerdp3-x11</code>, <code>sudo dnf install freerdp</code> or Remmina. Or use <code>sidegate tunnel</code> and any client.</span>
+      <span data-os-panel="darwin" hidden>Install <strong>Windows App</strong> from the App Store, or use <code>sidegate tunnel</code> with another client.</span>
+    </dd>
+    <dt>ssh says "kex_exchange_identification" or "Connection closed" right away</dt>
+    <dd>The tunnel couldn't be opened. Run <code>sidegate proxy {{$ssh}}</code> on its own to see the error, or <code>sidegate login {{.Portal}}</code> to sign in again.</dd>
+    <dt>Sign-in fails on a server without a desktop</dt>
+    <dd>The sign-in hands the result to the computer you run <code>sidegate</code> on, so open the printed link in a browser on that same computer.</dd>
+  </dl>
+
+  <h2 id="reference">Command reference</h2>
+  {{template "cli-code" (printf "sidegate login <portal-url>    sign in (once per computer)\nsidegate apps                  list your apps\nsidegate rdp <app> [-port N]   tunnel and start your RDP client\nsidegate ssh [user@]<app> ...  ssh through the proxy\nsidegate proxy <app>           tunnel over stdin/stdout (ssh ProxyCommand)\nsidegate tunnel <app> -port N  only open a local port\nsidegate logout                sign out and close open tunnels\nsidegate version               show the version")}}
+  {{else}}
+  <div class="empty-state">
+    <h2>No downloads available</h2>
+    <p class="muted">This proxy doesn't offer Sidegate CLI binaries. Administrators: the Docker image includes them; for other setups build them with <code>make release</code> and point <code>cliDownloads</code> at <code>dist/cli</code>.</p>
+  </div>
+  {{end}}
+</main>
+<script src="{{portal}}/static/cli.js" defer></script>
+{{template "foot"}}{{end}}
+
+{{define "cli-code"}}<div class="code-block"><pre><code>{{.}}</code></pre><button type="button" class="btn ghost small" data-copy>Copy</button></div>{{end}}
+
+{{define "cli-files"}}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>File</th><th>CPU</th><th>Size</th><th>SHA-256</th></tr></thead>
+  <tbody>
+  {{range .}}
+  <tr>
+    <td><a href="{{portal}}/cli/download/{{.Name}}" download>{{.Name}}</a></td>
+    <td>{{if eq .Arch "amd64"}}x64 (Intel/AMD){{else}}ARM64{{end}}</td>
+    <td class="nowrap">{{mb .Size}}</td>
+    <td><code class="hash" title="{{.SHA256}}">{{.SHA256}}</code></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}

@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sidegate
+spec:
+  template:
+    spec:
+      containers:
+        - name: sidegate
+          env:
+            - {name: SIDEGATE_RECORDING_DIR, value: /recordings}
+          volumeMounts:
+            - {name: recordings, mountPath: /recordings}
+      volumes:
+        - name: recordings
+          persistentVolumeClaim: {claimName: sidegate-recordings}

@@ -1,0 +1,104 @@
+# guacd (Apache Guacamole's protocol daemon) renders RDP and SSH sessions for
+# browser access. It runs as its own Deployment so it can be scaled and sized
+# independently of the proxy: guacd needs CPU and memory per concurrent
+# session (rule of thumb: ~1 core and 0.5-1 GiB per 10-25 RDP sessions; SSH
+# is much lighter), while the proxy needs very little.
+#
+# Each browser session holds one TCP connection to one guacd pod for its
+# whole life, so plain Service load balancing works. Restarting or scaling
+# down a guacd pod ends the sessions on it.
+#
+# Not needed if you only use the Sidegate CLI: delete this file from
+# kustomization.yaml and remove guacd from the config.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacd
+  labels: {app.kubernetes.io/name: guacd, app.kubernetes.io/part-of: sidegate}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app.kubernetes.io/name: guacd}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: guacd, app.kubernetes.io/part-of: sidegate}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000 # the image's guacd user
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: guacd}
+      containers:
+        - name: guacd
+          image: guacamole/guacd:1.5.5
+          env:
+            - {name: GUACD_LOG_LEVEL, value: info}
+          ports:
+            - {name: guacd, containerPort: 4822}
+          readinessProbe:
+            tcpSocket: {port: guacd}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: guacd}
+            periodSeconds: 20
+          resources:
+            # Size by concurrent browser RDP sessions, not by users.
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {memory: 2Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            # FreeRDP keeps its certificate store under $HOME.
+            - {name: tmp, mountPath: /tmp}
+            - {name: home, mountPath: /home/guacd}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - {name: home, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacd
+  labels: {app.kubernetes.io/name: guacd, app.kubernetes.io/part-of: sidegate}
+spec:
+  selector: {app.kubernetes.io/name: guacd}
+  ports:
+    - {name: guacd, port: 4822, targetPort: guacd}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: guacd
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: guacd}
+---
+# guacd has no authentication: anyone who can reach it can open RDP and SSH
+# connections to any host it can reach. Only the proxy may connect. (Requires
+# a CNI that enforces NetworkPolicy, e.g. Calico or Cilium.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: guacd
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: guacd}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: sidegate}
+      ports:
+        - {protocol: TCP, port: 4822}

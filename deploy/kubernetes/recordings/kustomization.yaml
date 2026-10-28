@@ -1,0 +1,13 @@
+# Session recording storage. Enable it with
+#
+#   components: [recordings]
+#
+# in ../kustomization.yaml. Recordings must be on a volume shared by all
+# replicas (ReadWriteMany), e.g. Azure Files, Amazon EFS or NFS: set
+# storageClassName in pvc.yaml. Then pick the apps under Admin → Recordings.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - pvc.yaml
+patches:
+  - path: deployment-patch.yaml

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sidegate
+  labels: {app.kubernetes.io/name: sidegate}
+spec:
+  # Sessions live in encrypted cookies and apps in PostgreSQL, so replicas
+  # need no sticky sessions; admin changes reach all replicas within ~5s.
+  # The number of replicas is set by hpa.yaml (2 to 10). Without the HPA,
+  # set "replicas: 2" here.
+  selector:
+    matchLabels: {app.kubernetes.io/name: sidegate}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: sidegate}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: /metrics
+    spec:
+      automountServiceAccountToken: false
+      # On shutdown the proxy fails readiness, keeps serving for 5 s, then
+      # tells open RDP/SSH sessions to reconnect and finishes requests
+      # (up to 20 s).
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65532 # makes mounted volumes (e.g. recordings) writable
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: sidegate}
+      containers:
+        - name: sidegate
+          image: sidegate
+          args: ["-config", "/etc/sidegate/config.yaml"]
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: health, containerPort: 8081}
+          envFrom:
+            - secretRef: {name: sidegate-secrets}
+          env:
+            # Lets Go's garbage collector work harder before the container
+            # reaches its memory limit instead of being OOM-killed. Keep it
+            # at about 90 % of limits.memory below.
+            - {name: GOMEMLIMIT, value: 230MiB}
+          volumeMounts:
+            - {name: config, mountPath: /etc/sidegate, readOnly: true}
+          livenessProbe:
+            httpGet: {path: /healthz, port: health}
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /readyz, port: health}
+            periodSeconds: 5
+          resources:
+            # The HPA scales on CPU relative to this request.
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {memory: 256Mi} # adjust GOMEMLIMIT above with it
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: config
+          configMap: {name: sidegate-config}

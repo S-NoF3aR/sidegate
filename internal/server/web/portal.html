@@ -1,0 +1,82 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+{{define "portal"}}{{template "head" "Your apps"}}
+{{template "topbar" .}}
+<main class="container{{if .Tree.Children}} wide{{end}}">
+  <div class="heading">
+    <div>
+      <h1>Your apps</h1>
+      <p class="muted">{{len .Apps}} application{{if ne (len .Apps) 1}}s{{end}} available to you</p>
+    </div>
+    {{if .Apps}}<input id="filter" type="search" placeholder="Filter apps…" aria-label="Filter apps" autocomplete="off">{{end}}
+  </div>
+
+  {{if .Tree.Children}}
+  <div class="portal-layout">
+    <nav class="cat-nav" aria-label="Categories">
+      <a href="#" class="cat-link" data-cat="" aria-current="true">All apps <span class="count">{{.Tree.Count}}</span></a>
+      {{template "cat-nav" .Tree.Children}}
+    </nav>
+    <div id="apps" class="cat-sections">
+      {{range .Tree.Children}}{{template "cat-section" .}}{{end}}
+      <p class="empty" id="no-match" hidden>No apps match your filter.</p>
+    </div>
+  </div>
+  {{else if .Apps}}
+  <div id="apps">
+    <ul class="grid">{{range .Apps}}{{template "app-card" .}}{{end}}</ul>
+    <p class="empty" id="no-match" hidden>No apps match your filter.</p>
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <h2>No apps yet</h2>
+    <p class="muted">You don't have access to any application. Ask an administrator to add you to the right group.</p>
+  </div>
+  {{end}}
+
+  {{if .Remote}}<p class="muted small cli-note">Prefer your own Remote Desktop or SSH client? <a href="{{portal}}/cli">Get the Sidegate CLI</a>.</p>{{end}}
+
+  {{if .Groups}}
+  <details class="groups">
+    <summary>Your groups ({{len .Groups}})</summary>
+    <ul>{{range .Groups}}<li><code>{{.}}</code></li>{{end}}</ul>
+  </details>
+  {{end}}
+</main>
+<script src="{{portal}}/static/portal.js" defer></script>
+{{template "foot"}}{{end}}
+
+{{define "cat-nav"}}
+<ul>
+  {{range .}}
+  <li>
+    <a href="#{{.ID}}" class="cat-link" data-cat="{{.Path}}">{{.Name}} <span class="count">{{.Count}}</span></a>
+    {{if .Children}}{{template "cat-nav" .Children}}{{end}}
+  </li>
+  {{end}}
+</ul>
+{{end}}
+
+{{define "cat-section"}}
+<details class="cat-section depth-{{.Depth}}" id="{{.ID}}" data-cat="{{.Path}}" open>
+  <summary><span class="cat-name">{{.Name}}</span> <span class="count">{{.Count}}</span></summary>
+  <div class="cat-body">
+    {{if .Apps}}<ul class="grid">{{range .Apps}}{{template "app-card" .}}{{end}}</ul>{{end}}
+    {{range .Children}}{{template "cat-section" .}}{{end}}
+  </div>
+</details>
+{{end}}
+
+{{define "app-card"}}
+<li class="app" data-search="{{.Title}} {{.Name}} {{.Description}} {{.Category}}" data-cat="{{.Category}}">
+  <a class="card" href="{{.URL}}">
+    {{if isURL .Icon}}<img class="icon" src="{{.Icon}}" alt="" width="44" height="44" loading="lazy">
+    {{else if .Icon}}<span class="icon glyph">{{.Icon}}</span>
+    {{else}}<span class="icon letter h{{hue .Name}}">{{initial .Title}}</span>{{end}}
+    <span class="body">
+      <span class="title">{{.Title}}{{if eq .Type "rdp"}} <span class="tag" title="Remote desktop">RDP</span>{{else if eq .Type "ssh"}} <span class="tag" title="SSH terminal">SSH</span>{{end}}{{if .RequireMFA}} <span class="tag" title="Requires multi-factor authentication">MFA</span>{{end}}</span>
+      {{if .Description}}<span class="desc">{{.Description}}</span>{{end}}
+      <span class="host">{{.URL}}</span>
+    </span>
+  </a>
+</li>
+{{end}}

@@ -1,0 +1,18 @@
+{{/* SPDX-License-Identifier: AGPL-3.0-only */}}
+{{define "cli-login"}}{{template "head" "Sign in the Sidegate CLI"}}
+{{template "topbar" .}}
+<main class="container narrow">
+  <div class="message">
+    <h1>Sign in the Sidegate CLI?</h1>
+    <p class="muted">The Sidegate CLI on this computer wants to connect to remote desktops as you{{with .User}} ({{.Display}}){{end}}. Only continue if you just started it yourself.</p>
+    <form method="post" action="{{portal}}/cli/login">
+      <input type="hidden" name="port" value="{{.Port}}">
+      <input type="hidden" name="state" value="{{.State}}">
+      <input type="hidden" name="challenge" value="{{.Challenge}}">
+      {{if .MFA}}<input type="hidden" name="mfa" value="1">{{end}}
+      {{if .MaxAge}}<input type="hidden" name="max_age" value="{{.MaxAge}}">{{end}}
+      <button class="btn" type="submit">Continue</button>
+    </form>
+  </div>
+</main>
+{{template "foot"}}{{end}}
